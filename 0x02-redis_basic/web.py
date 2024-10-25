@@ -1,40 +1,31 @@
-#!/usr/bin/python3
-""" web task """
+#!/usr/bin/env python3
 
-import requests
-import time
 import redis
+import requests
 from functools import wraps
 
-cache = redis.Redis()
-cache.flushdb()
+r = redis.Redis()
 
-def cache_page(expiration=10):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(url: str):
-            cache_key = f"count:{url}"
-            cached_content = cache.get(url)
-            if cached_content:
-                cache.incr(cache_key)
-                return cached_content.decode('utf-8')
+def url_access_count(method):
+    @wraps(method)
+    def wrapper(url):
+        key = "cached:" + url
+        cached_value = r.get(key)
+        if cached_value:
+            return cached_value.decode("utf-8")
 
-            response = func(url)
-            cache.set(url, response, ex=expiration)
-            cache.set(cache_key, 1)
-            return response
-        return wrapper
-    return decorator
+        key_count = "count:" + url
+        html_content = method(url)
 
-@cache_page(expiration=10)
+        r.incr(key_count)
+        r.set(key, html_content, ex=10)
+        return html_content
+    return wrapper
+
+@url_access_count
 def get_page(url: str) -> str:
-    response = requests.get(url)
-    response.raise_for_status()
-    return response.text
+    results = requests.get(url)
+    return results.text
 
 if __name__ == "__main__":
-    test_url = "http://slowwly.robertomurray.co.uk"
-    print(get_page(test_url))
-    print(get_page(test_url))
-    time.sleep(11)
-    print(get_page(test_url))
+    print(get_page('http://slowwly.robertomurray.co.uk/delay/1000/url/http://example.com'))
