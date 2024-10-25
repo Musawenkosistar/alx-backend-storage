@@ -1,42 +1,38 @@
 #!/usr/bin/env python3
-"""A module with tools for request caching and tracking.
-"""
+"""A module with tools for request caching and tracking"""
 
-
-import redis
 import requests
+import time
 from functools import wraps
 
-r = redis.Redis()
+cache = {}
 
+def cache_result(expiration=10):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(url):
+            current_time = time.time()
+            cache_key = f"count:{url}"
+            if url in cache and (current_time - cache[url]['time'] < expiration):
+                cache[cache_key] += 1
+                return cache[url]['content']
+            else:
+                response = func(url)
+                cache[url] = {'content': response, 'time': current_time}
+                cache[cache_key] = 1
+                return response
+        return wrapper
+    return decorator
 
-def url_access_count(method):
-    """decorator for get_page function"""
-    @wraps(method)
-    def wrapper(url):
-        """wrapper function"""
-        key = "cached:" + url
-        cached_value = r.get(key)
-        if cached_value:
-            return cached_value.decode("utf-8")
-
-            # Get new content and update cache
-        key_count = "count:" + url
-        html_content = method(url)
-
-        r.incr(key_count)
-        r.set(key, html_content, ex=10)
-        r.expire(key, 10)
-        return html_content
-    return wrapper
-
-
-@url_access_count
+@cache_result(expiration=10)
 def get_page(url: str) -> str:
-    """obtain the HTML content of a particular"""
-    results = requests.get(url)
-    return results.text
-
+    response = requests.get(url)
+    response.raise_for_status()
+    return response.text
 
 if __name__ == "__main__":
-    get_page('http://slowwly.robertomurray.co.uk')
+    url = "http://slowwly.robertomurray.co.uk/delay/1000/url/http://example.com"
+    print(get_page(url))
+    print(get_page(url))
+    time.sleep(11)
+    print(get_page(url))
